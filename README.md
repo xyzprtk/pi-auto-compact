@@ -42,6 +42,8 @@ The current release uses the fixed tiered policy above and does not yet expose p
 
 These exclusions would apply to this extension's automatic threshold trigger. They would not disable Pi's native compaction, manual `/compact`, or overflow recovery. Disabling all automatic compaction should remain a Pi compaction setting rather than an extension-level override.
 
+The proposed v2 behavior and open design questions are recorded in [docs/v2.md](docs/v2.md).
+
 ## Requirements
 
 - Node.js `>=22.19.0`
@@ -63,13 +65,29 @@ For a quick test without installing:
 pi -e /absolute/path/to/pi-auto-compact/src/index.ts
 ```
 
+### Directly from GitHub
+
+Anyone with access to the public repository can install the current `main` branch directly:
+
+```bash
+pi install git:github.com/xyzprtk/pi-auto-compact
+```
+
+The repository contains a `package.json` with a Pi package manifest and the `pi-package` keyword, so Pi can clone the repository, install its package dependencies, and load `src/index.ts` as the extension.
+
+For a fork, replace `xyzprtk` with the fork owner:
+
+```bash
+pi install git:github.com/<owner>/pi-auto-compact
+```
+
 ### From npm after publishing
 
 ```bash
 pi install npm:pi-auto-compact-threshold
 ```
 
-The package uses the `pi-package` keyword and declares its extension entry in `package.json`, so it can also be installed as a local Pi package directory.
+The npm command becomes available after the package is published to npm. The package uses the `pi-package` keyword and declares its extension entry in `package.json`, so it can also be installed as a local Pi package directory.
 
 ## Development
 
