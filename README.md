@@ -2,7 +2,7 @@
 
 A small [Pi](https://pi.dev) extension that automatically compacts a session using a context-window-aware percentage threshold.
 
-The extension uses Pi's own `ctx.getContextUsage()` and `ctx.compact()` APIs. It does not estimate the context window from a hard-coded token count, and it does not add a second summarization implementation.
+The current release is `0.2.0`. The extension uses Pi's own `ctx.getContextUsage()` and `ctx.compact()` APIs. It does not estimate the context window from a hard-coded token count, and it does not add a second summarization implementation.
 
 ## Behavior
 
@@ -31,6 +31,16 @@ The base threshold is percentage-based so very large context windows retain the 
 For small contexts, a 22K-token safety floor prevents compaction from triggering before Pi has enough older material to summarize. For example, a 32K model compacts just above 22K rather than at 16K. Models with a context window below 22K are left to Pi's native compaction policy.
 
 At exactly the calculated threshold, the extension does not compact; it compacts only after usage crosses above it.
+
+## Configuration scope and future exclusions
+
+The current release uses the fixed tiered policy above and does not yet expose per-session or per-model exclusion settings. A future v2 release can support those without changing the compaction mechanism:
+
+- A session-level on/off toggle can persist a custom session entry and restore the setting when the session is resumed.
+- A model-level exclusion can match the active provider and model ID before starting an extension-triggered compaction.
+- A model switch can re-evaluate the active model-specific policy.
+
+These exclusions would apply to this extension's automatic threshold trigger. They would not disable Pi's native compaction, manual `/compact`, or overflow recovery. Disabling all automatic compaction should remain a Pi compaction setting rather than an extension-level override.
 
 ## Requirements
 
