@@ -1,0 +1,45 @@
+{
+  "name": "pi-auto-compact-threshold",
+  "version": "0.1.0",
+  "description": "A Pi extension that automatically compacts a session after context usage exceeds 30% of the model context window.",
+  "keywords": [
+    "pi-package",
+    "pi",
+    "context",
+    "compaction",
+    "automation"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "files": [
+    "src",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "check": "npm run typecheck && npm test",
+    "test": "npm run test:unit && npm run test:e2e",
+    "test:unit": "vitest run test/auto-compact.test.ts",
+    "test:e2e": "vitest run test/e2e.test.ts",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "0.85.1",
+    "@types/node": "22.19.19",
+    "typescript": "5.9.3",
+    "vitest": "4.1.9"
+  }
+}
