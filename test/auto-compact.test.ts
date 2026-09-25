@@ -50,28 +50,43 @@ function createContext(tokens: number | null, contextWindow = 100) {
 	};
 }
 
+const STANDARD_THRESHOLD_TOKENS = 125_001;
+
 describe("pi-auto-compact", () => {
-	it("starts a compaction when a settled agent is above 30% context usage", () => {
+	it.each([
+		{ label: "32K safety floor", contextWindow: 32_000, atThreshold: 22_000, aboveThreshold: 22_001 },
+		{ label: "64K standard tier", contextWindow: 64_000, atThreshold: 32_000, aboveThreshold: 32_001 },
+		{ label: "250K tier", contextWindow: 250_000, atThreshold: 125_000, aboveThreshold: 125_001 },
+		{ label: "500K tier", contextWindow: 500_000, atThreshold: 275_000, aboveThreshold: 275_001 },
+		{ label: "1M tier", contextWindow: 1_000_000, atThreshold: 400_000, aboveThreshold: 400_001 },
+		{ label: "2M tier", contextWindow: 2_000_000, atThreshold: 800_000, aboveThreshold: 800_001 },
+	])(
+		"uses the $label threshold",
+		({ contextWindow, atThreshold: thresholdTokens, aboveThreshold: aboveThresholdTokens }) => {
+			const atThresholdHarness = createHarness();
+			const atThreshold = createContext(thresholdTokens, contextWindow);
+			atThresholdHarness.emit("agent_settled", atThreshold.ctx);
+			expect(atThreshold.compact).not.toHaveBeenCalled();
+
+			const aboveThresholdHarness = createHarness();
+			const aboveThreshold = createContext(aboveThresholdTokens, contextWindow);
+			aboveThresholdHarness.emit("agent_settled", aboveThreshold.ctx);
+			expect(aboveThreshold.compact).toHaveBeenCalledTimes(1);
+		},
+	);
+
+	it("leaves context windows below the safety floor to Pi's native policy", () => {
 		const { emit } = createHarness();
-		const { ctx, compact } = createContext(31);
-
-		emit("agent_settled", ctx);
-
-		expect(compact).toHaveBeenCalledTimes(1);
-	});
-
-	it("does not start a compaction at exactly 30% context usage", () => {
-		const { emit } = createHarness();
-		const { ctx, compact } = createContext(30);
+		const { ctx, compact } = createContext(16_000, 16_000);
 
 		emit("agent_settled", ctx);
 
 		expect(compact).not.toHaveBeenCalled();
 	});
 
-	it("does not compact repeatedly while usage remains above 30%", () => {
+	it("does not compact repeatedly while usage remains above the threshold", () => {
 		const { emit } = createHarness();
-		const { ctx, compact } = createContext(31);
+		const { ctx, compact } = createContext(STANDARD_THRESHOLD_TOKENS, 250_000);
 
 		emit("agent_settled", ctx);
 		compact.mock.calls[0][0].onComplete();
@@ -80,15 +95,15 @@ describe("pi-auto-compact", () => {
 		expect(compact).toHaveBeenCalledTimes(1);
 	});
 
-	it("rearms after usage drops below 30% and crosses the threshold again", () => {
+	it("rearms after usage drops below the threshold and crosses it again", () => {
 		const { emit } = createHarness();
-		const { ctx, compact, setTokens } = createContext(31);
+		const { ctx, compact, setTokens } = createContext(STANDARD_THRESHOLD_TOKENS, 250_000);
 
 		emit("agent_settled", ctx);
 		compact.mock.calls[0][0].onComplete();
-		setTokens(20);
+		setTokens(100_000);
 		emit("agent_settled", ctx);
-		setTokens(31);
+		setTokens(STANDARD_THRESHOLD_TOKENS);
 		emit("agent_settled", ctx);
 
 		expect(compact).toHaveBeenCalledTimes(2);
@@ -96,7 +111,7 @@ describe("pi-auto-compact", () => {
 
 	it("rearms after a compaction error so a later settled run can retry", () => {
 		const { emit } = createHarness();
-		const { ctx, compact } = createContext(31);
+		const { ctx, compact } = createContext(STANDARD_THRESHOLD_TOKENS, 250_000);
 
 		emit("agent_settled", ctx);
 		compact.mock.calls[0][0].onError(new Error("temporary failure"));
@@ -107,7 +122,7 @@ describe("pi-auto-compact", () => {
 
 	it("waits when context usage is not yet known", () => {
 		const { emit } = createHarness();
-		const { ctx, compact } = createContext(null);
+		const { ctx, compact } = createContext(null, 250_000);
 
 		emit("agent_settled", ctx);
 
@@ -116,7 +131,7 @@ describe("pi-auto-compact", () => {
 
 	it("does not start overlapping compactions while one is in flight", () => {
 		const { emit } = createHarness();
-		const { ctx, compact } = createContext(31);
+		const { ctx, compact } = createContext(STANDARD_THRESHOLD_TOKENS, 250_000);
 
 		emit("agent_settled", ctx);
 		emit("agent_settled", ctx);
@@ -126,7 +141,7 @@ describe("pi-auto-compact", () => {
 
 	it("treats a successful session compaction as satisfying the current crossing", () => {
 		const { emit } = createHarness();
-		const { ctx, compact } = createContext(31);
+		const { ctx, compact } = createContext(STANDARD_THRESHOLD_TOKENS, 250_000);
 
 		emit("session_compact", ctx);
 		emit("agent_settled", ctx);
@@ -136,7 +151,7 @@ describe("pi-auto-compact", () => {
 
 	it("rearms after a model change because the context window may have changed", () => {
 		const { emit } = createHarness();
-		const { ctx, compact } = createContext(31);
+		const { ctx, compact } = createContext(STANDARD_THRESHOLD_TOKENS, 250_000);
 
 		emit("agent_settled", ctx);
 		compact.mock.calls[0][0].onComplete();
@@ -148,7 +163,7 @@ describe("pi-auto-compact", () => {
 
 	it("does not overlap a compaction when the model changes mid-flight", () => {
 		const { emit } = createHarness();
-		const { ctx, compact } = createContext(31);
+		const { ctx, compact } = createContext(STANDARD_THRESHOLD_TOKENS, 250_000);
 
 		emit("agent_settled", ctx);
 		emit("model_select", ctx);
@@ -159,7 +174,7 @@ describe("pi-auto-compact", () => {
 
 	it("rearms when another compaction attempt fails", () => {
 		const { emit } = createHarness();
-		const { ctx, compact } = createContext(31);
+		const { ctx, compact } = createContext(STANDARD_THRESHOLD_TOKENS, 250_000);
 
 		emit("agent_settled", ctx);
 		emit("session_compact_failed", ctx);

@@ -1,7 +1,7 @@
 {
   "name": "pi-auto-compact-threshold",
-  "version": "0.1.0",
-  "description": "A Pi extension that automatically compacts a session after context usage exceeds 30% of the model context window.",
+  "version": "0.2.0",
+  "description": "A Pi extension that automatically compacts sessions using context-window-aware percentage thresholds.",
   "keywords": [
     "pi-package",
     "pi",

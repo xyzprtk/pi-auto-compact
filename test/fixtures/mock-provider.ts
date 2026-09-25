@@ -18,7 +18,7 @@ export default function registerMockProvider(pi: ExtensionAPI): void {
 				reasoning: false,
 				input: ["text"],
 				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-				contextWindow: 64,
+				contextWindow: 128_000,
 				maxTokens: 16,
 			},
 		],

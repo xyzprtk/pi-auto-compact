@@ -1,6 +1,20 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
-const CONTEXT_THRESHOLD = 0.3;
+const STANDARD_CONTEXT_THRESHOLD = 0.5;
+const MEDIUM_CONTEXT_THRESHOLD = 0.55;
+const LARGE_CONTEXT_THRESHOLD = 0.4;
+const SMALL_CONTEXT_TRIGGER_FLOOR = 22_000;
+
+function getCompactionThreshold(contextWindow: number): number {
+	const percentageThreshold =
+		contextWindow >= 1_000_000
+			? LARGE_CONTEXT_THRESHOLD
+			: contextWindow >= 500_000
+				? MEDIUM_CONTEXT_THRESHOLD
+				: STANDARD_CONTEXT_THRESHOLD;
+
+	return Math.max(contextWindow * percentageThreshold, SMALL_CONTEXT_TRIGGER_FLOOR);
+}
 
 function notify(ctx: ExtensionContext, message: string, type: "info" | "warning" | "error"): void {
 	if (ctx.hasUI) {
@@ -51,7 +65,8 @@ export default function piAutoCompact(pi: ExtensionAPI): void {
 			return;
 		}
 
-		if (usage.tokens <= usage.contextWindow * CONTEXT_THRESHOLD) {
+		const thresholdTokens = getCompactionThreshold(usage.contextWindow);
+		if (usage.tokens <= thresholdTokens) {
 			armed = true;
 			return;
 		}

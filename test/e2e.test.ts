@@ -24,7 +24,7 @@ function readRequest(request: IncomingMessage): Promise<string> {
 	});
 }
 
-function writeCompletion(response: ServerResponse, content: string): void {
+function writeCompletion(response: ServerResponse, content: string, promptTokens = 64): void {
 	response.writeHead(200, {
 		"content-type": "text/event-stream",
 		"cache-control": "no-cache",
@@ -45,7 +45,7 @@ function writeCompletion(response: ServerResponse, content: string): void {
 			created: 0,
 			model: "mock-test",
 			choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
-			usage: { prompt_tokens: 64, completion_tokens: 8, total_tokens: 72 },
+			usage: { prompt_tokens: promptTokens, completion_tokens: 8, total_tokens: promptTokens + 8 },
 		},
 	];
 
@@ -58,8 +58,17 @@ function writeCompletion(response: ServerResponse, content: string): void {
 async function runPiAgainstMockProvider(): Promise<{ code: number | null; output: string; requests: unknown[] }> {
 	const requests: unknown[] = [];
 	const server = createServer(async (request, response) => {
-		requests.push(JSON.parse(await readRequest(request)));
-		writeCompletion(response, requests.length === 1 ? "Initial response." : "## Goal\n\nSummarize the test conversation.");
+		const requestBody = JSON.parse(await readRequest(request)) as {
+			messages?: Array<{ content?: unknown }>;
+		};
+		requests.push(requestBody);
+		const serializedMessages = JSON.stringify(requestBody.messages ?? []);
+		const promptTokens = Math.ceil(serializedMessages.length / 4);
+		writeCompletion(
+			response,
+			requests.length === 1 ? "Initial response." : "## Goal\n\nSummarize the test conversation.",
+			promptTokens,
+		);
 	});
 
 	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -144,7 +153,7 @@ async function runPiAgainstMockProvider(): Promise<{ code: number | null; output
 		output += chunk;
 	});
 
-	child.stdin.write(`${JSON.stringify({ id: "prompt-1", type: "prompt", message: "A".repeat(120) })}\n`);
+	child.stdin.write(`${JSON.stringify({ id: "prompt-1", type: "prompt", message: "A".repeat(300_000) })}\n`);
 
 	const code = await new Promise<number | null>((resolve, reject) => {
 		const timeout = setTimeout(() => {
@@ -184,5 +193,5 @@ describe("pi-auto-compact end to end", () => {
 		expect(requests, output).toHaveLength(2);
 		expect(events.some((event) => event.type === "compaction_start")).toBe(true);
 		expect(events.some((event) => event.type === "compaction_end")).toBe(true);
-	});
+	}, 30_000);
 });
