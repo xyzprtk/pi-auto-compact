@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented in this file.
 
+## [Unreleased]
+
+- Added `/auto-compact-status` to report current context usage, the active threshold, the tier that produced it, and what the extension will do next.
+- Added unit coverage for the status command and an end-to-end check that the command is registered by a real Pi host.
+
 ## [0.2.0] - 2026-09-25
 
 - Replaced the global 30% threshold with context-window-aware percentage tiers.

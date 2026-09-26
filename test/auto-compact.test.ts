@@ -3,12 +3,17 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import extension from "../src/index.js";
 
 type EventHandler = (event: unknown, ctx: ExtensionContext) => unknown;
+type CommandHandler = (args: string, ctx: ExtensionContext) => Promise<void>;
 
 function createHarness() {
 	const handlers = new Map<string, EventHandler>();
+	const commands = new Map<string, CommandHandler>();
 	const pi = {
 		on: vi.fn((eventName: string, handler: EventHandler) => {
 			handlers.set(eventName, handler);
+		}),
+		registerCommand: vi.fn((name: string, options: { handler: CommandHandler }) => {
+			commands.set(name, options.handler);
 		}),
 	} as unknown as ExtensionAPI;
 
@@ -21,6 +26,13 @@ function createHarness() {
 				throw new Error(`No handler registered for ${eventName}`);
 			}
 			return handler({ type: eventName }, ctx);
+		},
+		runCommand(name: string, ctx: ExtensionContext) {
+			const handler = commands.get(name);
+			if (!handler) {
+				throw new Error(`No command registered for ${name}`);
+			}
+			return handler("", ctx);
 		},
 	};
 }
@@ -181,5 +193,91 @@ describe("pi-auto-compact", () => {
 		emit("agent_settled", ctx);
 
 		expect(compact).toHaveBeenCalledTimes(2);
+	});
+});
+
+describe("auto-compact-status command", () => {
+	function status(tokens: number | null, contextWindow: number) {
+		const harness = createHarness();
+		const context = createContext(tokens, contextWindow);
+		return {
+			emit: harness.emit,
+			ctx: context.ctx,
+			compact: context.compact,
+			notify: context.notify,
+			async run() {
+				await harness.runCommand("auto-compact-status", context.ctx);
+				return context.notify.mock.calls.at(-1)?.[0] as string;
+			},
+		};
+	}
+
+	it("reports usage, the active threshold, and the armed state", async () => {
+		const { run } = status(100_000, 250_000);
+
+		const message = await run();
+
+		expect(message).toBe(
+			"Auto-compact: 100.0K of 250.0K (40.0%) | threshold 125.0K (50.0%, standard tier) | below threshold, armed",
+		);
+	});
+
+	it("reports that a compaction is in flight", async () => {
+		const { emit, ctx, run } = status(150_000, 250_000);
+		emit("agent_settled", ctx);
+
+		const message = await run();
+
+		expect(message).toContain("compaction in flight");
+	});
+
+	it("reports that a settled compaction is waiting to rearm", async () => {
+		const { emit, ctx, compact, run } = status(150_000, 250_000);
+		emit("agent_settled", ctx);
+		compact.mock.calls[0][0].onComplete();
+
+		const message = await run();
+
+		expect(message).toContain("over threshold, waiting for usage to fall back below it to rearm");
+	});
+
+	it("reports that the next settled run will compact", async () => {
+		const { run } = status(150_000, 250_000);
+
+		const message = await run();
+
+		expect(message).toContain("over threshold, compacts on the next settled run");
+	});
+
+	it("reports the tier and threshold for a large context window", async () => {
+		const { run } = status(400_000, 1_000_000);
+
+		const message = await run();
+
+		expect(message).toContain("threshold 400.0K (40.0%, large tier)");
+	});
+
+	it("explains that small context windows are left to Pi's native policy", async () => {
+		const { run } = status(16_000, 16_000);
+
+		const message = await run();
+
+		expect(message).toContain("below the safety floor, left to Pi's native policy");
+	});
+
+	it("reports that usage is not known yet", async () => {
+		const { run } = status(null, 250_000);
+
+		const message = await run();
+
+		expect(message).toBe("Auto-compact: context usage is not known yet.");
+	});
+
+	it("does not compact when only reporting status", async () => {
+		const { compact, run } = status(150_000, 250_000);
+
+		await run();
+
+		expect(compact).not.toHaveBeenCalled();
 	});
 });
