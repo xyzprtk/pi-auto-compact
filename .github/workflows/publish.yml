@@ -24,6 +24,6 @@ jobs:
 
       - run: npm test
 
+      # Trusted publishing: npm exchanges an OIDC token for a short-lived publish
+      # token, so no long-lived npm token is needed or wanted here.
       - run: npm publish
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
