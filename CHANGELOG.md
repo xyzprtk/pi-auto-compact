@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.3.1] - 2026-09-26
+
+Release infrastructure only. No change to how the extension behaves.
+
+- Added a tag-triggered GitHub Actions workflow that publishes to npm.
+- Switched publishing to npm trusted publishing, so releases authenticate with a short-lived OIDC token instead of a long-lived npm automation token. Provenance attestations are generated automatically.
+- Removed the npm token reference from the publish step, since the workflow no longer needs one.
+
 ## [0.3.0] - 2026-09-26
 
 - Treated Pi's "nothing to compact" and "already compacted" outcomes as expected rather than failures, and marked the crossing satisfied so they are not retried every turn.

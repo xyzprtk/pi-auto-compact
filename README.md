@@ -2,7 +2,7 @@
 
 A small [Pi](https://pi.dev) extension that automatically compacts a session using a context-window-aware percentage threshold.
 
-The current release is `0.3.0`. The extension uses Pi's own `ctx.getContextUsage()` and `ctx.compact()` APIs. It does not estimate the context window from a hard-coded token count, and it does not add a second summarization implementation.
+The current release is `0.3.1`. The extension uses Pi's own `ctx.getContextUsage()` and `ctx.compact()` APIs. It does not estimate the context window from a hard-coded token count, and it does not add a second summarization implementation.
 
 ## Behavior
 
