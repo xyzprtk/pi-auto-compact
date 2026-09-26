@@ -136,6 +136,13 @@ export default function piAutoCompact(pi: ExtensionAPI): void {
 			return;
 		}
 
+		// isIdle() is false while an agent run, compaction, or branch summary is in
+		// progress. Pi exposes no other way to detect a compaction it started itself,
+		// and starting a second one would abort and orphan the first.
+		if (!ctx.isIdle()) {
+			return;
+		}
+
 		const percent = usage.percent ?? (usage.tokens / usage.contextWindow) * 100;
 		const ui = ctx.hasUI ? ctx.ui : undefined;
 		compacting = true;
