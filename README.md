@@ -2,7 +2,7 @@
 
 A small [Pi](https://pi.dev) extension that automatically compacts a session using a context-window-aware percentage threshold.
 
-The current release is `0.2.0`. The extension uses Pi's own `ctx.getContextUsage()` and `ctx.compact()` APIs. It does not estimate the context window from a hard-coded token count, and it does not add a second summarization implementation.
+The current release is `0.3.0`. The extension uses Pi's own `ctx.getContextUsage()` and `ctx.compact()` APIs. It does not estimate the context window from a hard-coded token count, and it does not add a second summarization implementation.
 
 ## Behavior
 
@@ -86,6 +86,26 @@ The proposed v2 behavior and open design questions are recorded in [docs/v2.md](
 
 ## Install
 
+### From npm
+
+```bash
+pi install npm:pi-auto-compact-threshold
+```
+
+### From GitHub
+
+Anyone with access to the public repository can install the current `main` branch directly:
+
+```bash
+pi install git:github.com/xyzprtk/pi-auto-compact
+```
+
+For a fork, replace `xyzprtk` with the fork owner:
+
+```bash
+pi install git:github.com/<owner>/pi-auto-compact
+```
+
 ### From a local checkout
 
 From the directory that contains this package:
@@ -100,29 +120,7 @@ For a quick test without installing:
 pi -e /absolute/path/to/pi-auto-compact/src/index.ts
 ```
 
-### Directly from GitHub
-
-Anyone with access to the public repository can install the current `main` branch directly:
-
-```bash
-pi install git:github.com/xyzprtk/pi-auto-compact
-```
-
-The repository contains a `package.json` with a Pi package manifest and the `pi-package` keyword, so Pi can clone the repository, install its package dependencies, and load `src/index.ts` as the extension.
-
-For a fork, replace `xyzprtk` with the fork owner:
-
-```bash
-pi install git:github.com/<owner>/pi-auto-compact
-```
-
-### From npm after publishing
-
-```bash
-pi install npm:pi-auto-compact-threshold
-```
-
-The npm command becomes available after the package is published to npm. The package uses the `pi-package` keyword and declares its extension entry in `package.json`, so it can also be installed as a local Pi package directory.
+All three routes use the same `package.json`, which carries the `pi-package` keyword and declares the extension entry in `package.json`, so Pi can resolve the entry point in each case.
 
 ## Development
 
