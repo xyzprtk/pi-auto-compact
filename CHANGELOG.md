@@ -4,6 +4,7 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+- Skipped the automatic compaction while Pi reports the session as busy, so a compaction Pi started itself is never overlapped by a second one.
 - Added `/auto-compact-status` to report current context usage, the active threshold, the tier that produced it, and what the extension will do next.
 - Added unit coverage for the status command and an end-to-end check that the command is registered by a real Pi host.
 

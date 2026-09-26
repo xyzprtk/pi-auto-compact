@@ -9,6 +9,7 @@ The current release is `0.2.0`. The extension uses Pi's own `ctx.getContextUsage
 - Checks usage after each agent run reaches `agent_settled`.
 - Uses a tiered percentage threshold based on the active model's context window.
 - Starts at most one compaction at a time.
+- Skips the check while Pi is busy and tries again on the next settled run.
 - Rearms after a successful compaction only when usage later falls to or below the active threshold and crosses it again.
 - Retries the threshold after a failed or aborted compaction.
 - Observes successful and failed compactions started elsewhere in Pi, so manual compaction also satisfies the current crossing.
@@ -17,6 +18,8 @@ The current release is `0.2.0`. The extension uses Pi's own `ctx.getContextUsage
 - Reports the active threshold and current usage on demand through `/auto-compact-status`.
 
 The check happens after a run settles rather than in the middle of a tool-calling turn. This lets the current turn finish normally, then reduces the context before the next user prompt. Because the check never runs during a live turn, it cannot abort work that is already in progress.
+
+Before starting a compaction the extension asks Pi whether the session is idle. Pi reports a session as busy while an agent run, a compaction, or a branch summary is in progress, and Pi's own automatic compaction is one of those. If Pi is busy the extension does nothing and tries again on the next settled run, so an automatic compaction that Pi started itself is never overlapped by a second one. Starting a second compaction would abort the first and leave Pi holding an abort handle it can no longer reach, because Pi overwrites that handle on each new compaction. Threshold bookkeeping is unaffected, so usage that falls back below the threshold while Pi is busy still rearms normally.
 
 ## Threshold policy
 

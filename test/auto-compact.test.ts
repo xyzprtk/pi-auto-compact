@@ -37,13 +37,15 @@ function createHarness() {
 	};
 }
 
-function createContext(tokens: number | null, contextWindow = 100) {
+function createContext(tokens: number | null, contextWindow = 100, idle = true) {
 	let currentTokens = tokens;
+	let isIdle = idle;
 	const compact = vi.fn();
 	const notify = vi.fn();
 	const ctx = {
 		hasUI: true,
 		ui: { notify },
+		isIdle: vi.fn(() => isIdle),
 		getContextUsage: vi.fn(() => ({
 			tokens: currentTokens,
 			contextWindow,
@@ -58,6 +60,9 @@ function createContext(tokens: number | null, contextWindow = 100) {
 		notify,
 		setTokens(nextTokens: number | null) {
 			currentTokens = nextTokens;
+		},
+		setIdle(nextIdle: boolean) {
+			isIdle = nextIdle;
 		},
 	};
 }
@@ -149,6 +154,46 @@ describe("pi-auto-compact", () => {
 		emit("agent_settled", ctx);
 
 		expect(compact).toHaveBeenCalledTimes(1);
+	});
+
+	it("does not compact while Pi is busy, so it cannot orphan a compaction Pi started", () => {
+		const { emit } = createHarness();
+		const { ctx, compact, setIdle } = createContext(STANDARD_THRESHOLD_TOKENS, 250_000);
+		setIdle(false);
+
+		emit("agent_settled", ctx);
+
+		expect(compact).not.toHaveBeenCalled();
+	});
+
+	it("compacts once Pi becomes idle again", () => {
+		const { emit } = createHarness();
+		const { ctx, compact, setIdle } = createContext(STANDARD_THRESHOLD_TOKENS, 250_000);
+		setIdle(false);
+		emit("agent_settled", ctx);
+		setIdle(true);
+		emit("agent_settled", ctx);
+
+		expect(compact).toHaveBeenCalledTimes(1);
+	});
+
+	it("keeps rearming below the threshold while Pi is busy, then compacts once idle", () => {
+		const { emit } = createHarness();
+		const { ctx, compact, setIdle, setTokens } = createContext(STANDARD_THRESHOLD_TOKENS, 250_000);
+		emit("agent_settled", ctx);
+		compact.mock.calls[0][0].onComplete();
+		setIdle(false);
+		setTokens(100_000);
+		emit("agent_settled", ctx);
+		setTokens(STANDARD_THRESHOLD_TOKENS);
+		emit("agent_settled", ctx);
+
+		expect(compact).toHaveBeenCalledTimes(1);
+
+		setIdle(true);
+		emit("agent_settled", ctx);
+
+		expect(compact).toHaveBeenCalledTimes(2);
 	});
 
 	it("treats a successful session compaction as satisfying the current crossing", () => {
