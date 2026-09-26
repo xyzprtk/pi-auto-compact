@@ -2,6 +2,7 @@
   "name": "pi-auto-compact-threshold",
   "version": "0.3.0",
   "description": "A Pi extension that automatically compacts sessions using context-window-aware percentage thresholds.",
+  "author": "xyzprtk",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/xyzprtk/pi-auto-compact.git"
