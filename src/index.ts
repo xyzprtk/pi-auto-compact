@@ -5,6 +5,12 @@ const MEDIUM_CONTEXT_THRESHOLD = 0.55;
 const LARGE_CONTEXT_THRESHOLD = 0.4;
 const SMALL_CONTEXT_TRIGGER_FLOOR = 22_000;
 
+const SOFT_COMPACTION_ERRORS = ["Nothing to compact", "Already compacted"];
+
+function isSoftCompactionError(error: Error): boolean {
+	return SOFT_COMPACTION_ERRORS.some((message) => error.message.includes(message));
+}
+
 interface CompactionPolicy {
 	thresholdTokens: number;
 	percent: number;
@@ -48,11 +54,20 @@ function formatTokens(tokens: number): string {
 	return `${Math.round(tokens)}`;
 }
 
-function describeState(tokens: number, thresholdTokens: number, compacting: boolean, armed: boolean): string {
+function describeState(
+	tokens: number,
+	thresholdTokens: number,
+	compacting: boolean,
+	armed: boolean,
+	blocked: boolean,
+): string {
 	if (compacting) {
 		return "compaction in flight";
 	}
 	if (tokens > thresholdTokens) {
+		if (blocked) {
+			return "over threshold, nothing to compact yet, waiting for usage to cross again";
+		}
 		return armed
 			? "over threshold, compacts on the next settled run"
 			: "over threshold, waiting for usage to fall back below it to rearm";
@@ -63,19 +78,35 @@ function describeState(tokens: number, thresholdTokens: number, compacting: bool
 export default function piAutoCompact(pi: ExtensionAPI): void {
 	let armed = true;
 	let compacting = false;
+	let blocked = false;
 
 	const reset = () => {
 		armed = true;
 		compacting = false;
+		blocked = false;
 	};
 
 	const rearm = () => {
 		armed = true;
+		blocked = false;
 	};
 
 	const handleCompactionError = (error: Error, ui: ExtensionContext["ui"] | undefined) => {
 		compacting = false;
+
+		if (isSoftCompactionError(error)) {
+			// Pi has no cut point, which on a small context window means there is
+			// nothing older than keepRecentTokens to summarize. This is an expected
+			// outcome rather than a failure, so it is not reported as an error.
+			// Pi renders its own error for the attempt regardless, so the crossing is
+			// marked satisfied instead of retried to keep that to one message.
+			armed = false;
+			blocked = true;
+			return;
+		}
+
 		armed = true;
+		blocked = false;
 		ui?.notify(`Auto-compaction failed: ${error.message}`, "error");
 	};
 
@@ -86,6 +117,7 @@ export default function piAutoCompact(pi: ExtensionAPI): void {
 	pi.on("session_compact", () => {
 		compacting = false;
 		armed = false;
+		blocked = false;
 	});
 
 	pi.on("session_compact_failed", () => {
@@ -108,7 +140,7 @@ export default function piAutoCompact(pi: ExtensionAPI): void {
 			const deferred = policy.thresholdTokens >= usage.contextWindow;
 			const state = deferred
 				? "below the safety floor, left to Pi's native policy"
-				: describeState(usage.tokens, policy.thresholdTokens, compacting, armed);
+				: describeState(usage.tokens, policy.thresholdTokens, compacting, armed, blocked);
 
 			const summary = [
 				`Auto-compact: ${formatTokens(usage.tokens)} of ${formatTokens(usage.contextWindow)} (${formatPercent(percent)})`,
@@ -128,7 +160,7 @@ export default function piAutoCompact(pi: ExtensionAPI): void {
 
 		const thresholdTokens = getCompactionPolicy(usage.contextWindow).thresholdTokens;
 		if (usage.tokens <= thresholdTokens) {
-			armed = true;
+			rearm();
 			return;
 		}
 
@@ -153,6 +185,7 @@ export default function piAutoCompact(pi: ExtensionAPI): void {
 				onComplete: () => {
 					compacting = false;
 					armed = false;
+					blocked = false;
 				},
 				onError: (error) => handleCompactionError(error, ui),
 			});

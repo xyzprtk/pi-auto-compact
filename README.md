@@ -14,7 +14,7 @@ The current release is `0.2.0`. The extension uses Pi's own `ctx.getContextUsage
 - Retries the threshold after a failed or aborted compaction.
 - Observes successful and failed compactions started elsewhere in Pi, so manual compaction also satisfies the current crossing.
 - Resets its state when the session or model changes.
-- Shows a notification when UI output is available and reports compaction failures without interrupting the session.
+- Reports compaction failures without interrupting the session. A context that is already as small as it can be is not reported as a failure.
 - Reports the active threshold and current usage on demand through `/auto-compact-status`.
 
 The check happens after a run settles rather than in the middle of a tool-calling turn. This lets the current turn finish normally, then reduces the context before the next user prompt. Because the check never runs during a live turn, it cannot abort work that is already in progress.
@@ -51,10 +51,19 @@ The final field reports what the extension will do next. It is one of:
 | `below threshold, armed` | Usage is under the threshold. A crossing will trigger a compaction. |
 | `over threshold, compacts on the next settled run` | Usage is above the threshold and a compaction is armed. |
 | `over threshold, waiting for usage to fall back below it to rearm` | A compaction already ran at this crossing. The extension waits for usage to drop back under the threshold before arming again. |
+| `over threshold, nothing to compact yet, waiting for usage to cross again` | Pi found nothing older than its retained window to summarize, so the crossing has been marked satisfied and will not be retried. See below. |
 | `compaction in flight` | A compaction started and has not reported completion yet. |
 | `below the safety floor, left to Pi's native policy` | The context window is under 22K, so the extension never fires and Pi's own policy applies. |
 
 The command only reads state. It never triggers a compaction and never sends a prompt to the model.
+
+## When there is nothing to compact
+
+Pi summarizes only the entries older than its retained window, which defaults to 20,000 tokens. If the context is above the threshold but has not accumulated that much older material, Pi has no cut point and rejects the request with `Nothing to compact (session too small)` or `Already compacted`.
+
+This is an expected outcome rather than a failure. The context is already as small as it can be, so the extension does not report it as an error, and it marks the crossing as satisfied instead of retrying. That matters because Pi renders its own error line for the attempt regardless of what the extension does, so each retry would add another visible message. One attempt per crossing is the minimum.
+
+The situation resolves on its own once the conversation grows past the retained window, at which point there is something to compact. Until then the extension waits rather than retrying each turn, and it re-arms on a genuine crossing, on a successful compaction started elsewhere, on a model change, and on a new session. Pi's own automatic compaction has the same limitation, and Pi's overflow recovery remains the backstop if the context is exhausted.
 
 Context usage is reported by Pi and is not available until a model response has been measured. Right after a compaction it can also be reported as unknown, in which case the command says so instead of printing a number.
 

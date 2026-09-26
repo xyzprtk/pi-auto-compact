@@ -55,9 +55,20 @@ function writeCompletion(response: ServerResponse, content: string, promptTokens
 	response.end("data: [DONE]\n\n");
 }
 
+interface PiEvent {
+	type?: string;
+	method?: string;
+	message?: string;
+	notifyType?: string;
+	errorMessage?: string;
+}
+
 interface RunOptions {
 	initialPrompt?: string;
-	finishWhen: (event: { type?: string; method?: string; message?: string }) => boolean;
+	keepRecentTokens?: number;
+	followUpAfterFailedCompaction?: boolean;
+	finishDelayMs?: number;
+	finishWhen: (event: PiEvent, followUpSent: boolean) => boolean;
 }
 
 async function runPiAgainstMockProvider(
@@ -91,7 +102,7 @@ async function runPiAgainstMockProvider(
 	await mkdir(join(projectDir, ".pi"), { recursive: true });
 	await writeFile(
 		join(projectDir, ".pi", "settings.json"),
-		JSON.stringify({ compaction: { keepRecentTokens: 5 } }),
+		JSON.stringify({ compaction: { keepRecentTokens: options.keepRecentTokens ?? 5 } }),
 	);
 
 	const child = spawn(
@@ -132,6 +143,7 @@ async function runPiAgainstMockProvider(
 
 	let output = "";
 	let stdoutBuffer = "";
+	let followUpSent = false;
 	let finished = false;
 	const finish = () => {
 		if (finished) {
@@ -149,14 +161,27 @@ async function runPiAgainstMockProvider(
 		const lines = stdoutBuffer.split(/\r?\n/);
 		stdoutBuffer = lines.pop() ?? "";
 		for (const line of lines) {
-			try {
-				const event = JSON.parse(line) as { type?: string; method?: string; message?: string };
-				if (options.finishWhen(event)) {
-					finish();
-				}
-			} catch {
-				// Pi can write non-JSON diagnostics to stdout; ignore those lines.
+		let event: PiEvent;
+		try {
+			event = JSON.parse(line) as PiEvent;
+		} catch {
+			// Pi can write non-JSON diagnostics to stdout; ignore those lines.
+			continue;
+		}
+		if (options.followUpAfterFailedCompaction && !followUpSent && event.errorMessage !== undefined) {
+			followUpSent = true;
+			child.stdin.write(
+				`${JSON.stringify({ id: "prompt-2", type: "prompt", message: "B".repeat(300_000) })}\n`,
+			);
+		}
+		if (options.finishWhen(event, followUpSent)) {
+			const delay = options.finishDelayMs ?? 0;
+			if (delay > 0) {
+				setTimeout(finish, delay);
+			} else {
+				finish();
 			}
+		}
 		}
 	});
 	child.stderr.on("data", (chunk: string) => {
@@ -235,5 +260,34 @@ describe("pi-auto-compact end to end", () => {
 		expect(status?.method).toBe("notify");
 		expect(status?.notifyType).toBe("info");
 		expect(status?.message).toMatch(/threshold [\d.]+[KM]? \(\d+\.\d%, (standard|medium|large) tier\)/);
+	}, 30_000);
+
+	it("attempts once when Pi has nothing to compact, and does not retry every turn", async () => {
+		const { code, output } = await runPiAgainstMockProvider({
+			keepRecentTokens: 10_000_000,
+			followUpAfterFailedCompaction: true,
+			// agent_settled fires after message_end, so hold the process open long
+			// enough to observe whether a second attempt is made for the next turn.
+			finishDelayMs: 1_500,
+			finishWhen: (event, followUpSent) => followUpSent && event.type === "message_end",
+		});
+		const events = output
+			.split(/\r?\n/)
+			.filter(Boolean)
+			.flatMap((line) => {
+				try {
+					return [JSON.parse(line) as PiEvent];
+				} catch {
+					return [];
+				}
+			});
+
+		const failedCompactions = events.filter(
+			(event) => event.type === "compaction_end" && event.errorMessage !== undefined,
+		);
+
+		expect(code, output).toBe(0);
+		expect(failedCompactions, output).toHaveLength(1);
+		expect(failedCompactions[0].errorMessage).toContain("Nothing to compact");
 	}, 30_000);
 });
