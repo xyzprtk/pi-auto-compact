@@ -55,7 +55,17 @@ function writeCompletion(response: ServerResponse, content: string, promptTokens
 	response.end("data: [DONE]\n\n");
 }
 
-async function runPiAgainstMockProvider(): Promise<{ code: number | null; output: string; requests: unknown[] }> {
+interface RunOptions {
+	initialPrompt?: string;
+	finishWhen: (event: { type?: string; method?: string; message?: string }) => boolean;
+}
+
+async function runPiAgainstMockProvider(
+	options: RunOptions = {
+		initialPrompt: "A".repeat(300_000),
+		finishWhen: (event) => event.type === "compaction_end",
+	},
+): Promise<{ code: number | null; output: string; requests: unknown[] }> {
 	const requests: unknown[] = [];
 	const server = createServer(async (request, response) => {
 		const requestBody = JSON.parse(await readRequest(request)) as {
@@ -140,8 +150,8 @@ async function runPiAgainstMockProvider(): Promise<{ code: number | null; output
 		stdoutBuffer = lines.pop() ?? "";
 		for (const line of lines) {
 			try {
-				const event = JSON.parse(line) as { type?: string };
-				if (event.type === "compaction_end") {
+				const event = JSON.parse(line) as { type?: string; method?: string; message?: string };
+				if (options.finishWhen(event)) {
 					finish();
 				}
 			} catch {
@@ -153,7 +163,9 @@ async function runPiAgainstMockProvider(): Promise<{ code: number | null; output
 		output += chunk;
 	});
 
-	child.stdin.write(`${JSON.stringify({ id: "prompt-1", type: "prompt", message: "A".repeat(300_000) })}\n`);
+	child.stdin.write(
+		`${JSON.stringify({ id: "prompt-1", type: "prompt", message: options.initialPrompt ?? "A".repeat(300_000) })}\n`,
+	);
 
 	const code = await new Promise<number | null>((resolve, reject) => {
 		const timeout = setTimeout(() => {
@@ -193,5 +205,35 @@ describe("pi-auto-compact end to end", () => {
 		expect(requests, output).toHaveLength(2);
 		expect(events.some((event) => event.type === "compaction_start")).toBe(true);
 		expect(events.some((event) => event.type === "compaction_end")).toBe(true);
+	}, 30_000);
+
+	it("registers the status command and reports usage through a real Pi host", async () => {
+		const { code, output } = await runPiAgainstMockProvider({
+			initialPrompt: "/auto-compact-status",
+			finishWhen: (event) =>
+				event.type === "extension_ui_request" &&
+				event.method === "notify" &&
+				event.message?.startsWith("Auto-compact:") === true,
+		});
+		const events = output
+			.split(/\r?\n/)
+			.filter(Boolean)
+			.flatMap((line) => {
+				try {
+					return [JSON.parse(line) as { type?: string; method?: string; message?: string; notifyType?: string }];
+				} catch {
+					return [];
+				}
+			});
+
+		const status = events.find(
+			(event) => event.type === "extension_ui_request" && event.message?.startsWith("Auto-compact:") === true,
+		);
+
+		expect(code, output).toBe(0);
+		expect(status, output).toBeDefined();
+		expect(status?.method).toBe("notify");
+		expect(status?.notifyType).toBe("info");
+		expect(status?.message).toMatch(/threshold [\d.]+[KM]? \(\d+\.\d%, (standard|medium|large) tier\)/);
 	}, 30_000);
 });

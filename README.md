@@ -14,8 +14,9 @@ The current release is `0.2.0`. The extension uses Pi's own `ctx.getContextUsage
 - Observes successful and failed compactions started elsewhere in Pi, so manual compaction also satisfies the current crossing.
 - Resets its state when the session or model changes.
 - Shows a notification when UI output is available and reports compaction failures without interrupting the session.
+- Reports the active threshold and current usage on demand through `/auto-compact-status`.
 
-The check happens after a run settles rather than in the middle of a tool-calling turn. This lets the current turn finish normally, then reduces the context before the next user prompt.
+The check happens after a run settles rather than in the middle of a tool-calling turn. This lets the current turn finish normally, then reduces the context before the next user prompt. Because the check never runs during a live turn, it cannot abort work that is already in progress.
 
 ## Threshold policy
 
@@ -31,6 +32,28 @@ The base threshold is percentage-based so very large context windows retain the 
 For small contexts, a 22K-token safety floor prevents compaction from triggering before Pi has enough older material to summarize. For example, a 32K model compacts just above 22K rather than at 16K. Models with a context window below 22K are left to Pi's native compaction policy.
 
 At exactly the calculated threshold, the extension does not compact; it compacts only after usage crosses above it.
+
+## Checking the active threshold
+
+Run `/auto-compact-status` to see the current usage, the threshold in effect, and which tier produced it:
+
+```
+Auto-compact: 100.0K of 250.0K (40.0%) | threshold 125.0K (50.0%, standard tier) | below threshold, armed
+```
+
+The final field reports what the extension will do next. It is one of:
+
+| State | Meaning |
+|---|---|
+| `below threshold, armed` | Usage is under the threshold. A crossing will trigger a compaction. |
+| `over threshold, compacts on the next settled run` | Usage is above the threshold and a compaction is armed. |
+| `over threshold, waiting for usage to fall back below it to rearm` | A compaction already ran at this crossing. The extension waits for usage to drop back under the threshold before arming again. |
+| `compaction in flight` | A compaction started and has not reported completion yet. |
+| `below the safety floor, left to Pi's native policy` | The context window is under 22K, so the extension never fires and Pi's own policy applies. |
+
+The command only reads state. It never triggers a compaction and never sends a prompt to the model.
+
+Context usage is reported by Pi and is not available until a model response has been measured. Right after a compaction it can also be reported as unknown, in which case the command says so instead of printing a number.
 
 ## Configuration scope and future exclusions
 
