@@ -17,7 +17,10 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          # Node 24 bundles npm 11.9.0. Trusted publishing needs npm 11.5.1 or
+          # later; Node 22 bundles npm 10.9.8, which has no OIDC support and
+          # fails the publish with a 404.
+          node-version: 24
           registry-url: https://registry.npmjs.org
 
       - run: npm ci
