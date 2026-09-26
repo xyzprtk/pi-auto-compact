@@ -177,8 +177,7 @@ describe("pi-auto-compact", () => {
 		expect(compact).toHaveBeenCalledTimes(1);
 	});
 
-	it("keeps rearming below the threshold while Pi is busy, then compacts once idle", () => {
-		const { emit } = createHarness();
+	it("keeps rearming below the threshold while Pi is busy, then compacts once idle", () => {		const { emit } = createHarness();
 		const { ctx, compact, setIdle, setTokens } = createContext(STANDARD_THRESHOLD_TOKENS, 250_000);
 		emit("agent_settled", ctx);
 		compact.mock.calls[0][0].onComplete();
@@ -235,6 +234,95 @@ describe("pi-auto-compact", () => {
 
 		emit("agent_settled", ctx);
 		emit("session_compact_failed", ctx);
+		emit("agent_settled", ctx);
+
+		expect(compact).toHaveBeenCalledTimes(2);
+	});
+});
+
+describe("soft compaction outcomes", () => {
+	const NOTHING_TO_COMPACT = new Error("Nothing to compact (session too small)");
+	const ALREADY_COMPACTED = new Error("Already compacted");
+
+	it.each([
+		{ label: "nothing to compact", error: NOTHING_TO_COMPACT },
+		{ label: "already compacted", error: ALREADY_COMPACTED },
+	])("does not report $label as a failure", ({ error }) => {
+		const { emit } = createHarness();
+		const { ctx, compact, notify } = createContext(STANDARD_THRESHOLD_TOKENS, 250_000);
+
+		emit("agent_settled", ctx);
+		compact.mock.calls[0][0].onError(error);
+
+		expect(notify).not.toHaveBeenCalledWith(expect.stringContaining("Auto-compaction failed"), expect.anything());
+	});
+
+	it.each([
+		{ label: "nothing to compact", error: NOTHING_TO_COMPACT },
+		{ label: "already compacted", error: ALREADY_COMPACTED },
+	])("marks the crossing satisfied on $label instead of retrying", ({ error }) => {
+		const { emit } = createHarness();
+		const { ctx, compact } = createContext(STANDARD_THRESHOLD_TOKENS, 250_000);
+
+		emit("agent_settled", ctx);
+		compact.mock.calls[0][0].onError(error);
+		emit("agent_settled", ctx);
+		emit("agent_settled", ctx);
+
+		expect(compact).toHaveBeenCalledTimes(1);
+	});
+
+	it("still reports a genuine compaction failure as an error", () => {
+		const { emit } = createHarness();
+		const { ctx, compact, notify } = createContext(STANDARD_THRESHOLD_TOKENS, 250_000);
+
+		emit("agent_settled", ctx);
+		compact.mock.calls[0][0].onError(new Error("provider rejected the request"));
+		emit("agent_settled", ctx);
+
+		expect(compact).toHaveBeenCalledTimes(2);
+		expect(notify).toHaveBeenCalledWith(
+			"Auto-compaction failed: provider rejected the request",
+			"error",
+		);
+	});
+
+	it("retries after a soft outcome once usage crosses the threshold again", () => {
+		const { emit } = createHarness();
+		const { ctx, compact, setTokens } = createContext(STANDARD_THRESHOLD_TOKENS, 250_000);
+
+		emit("agent_settled", ctx);
+		compact.mock.calls[0][0].onError(NOTHING_TO_COMPACT);
+		setTokens(100_000);
+		emit("agent_settled", ctx);
+		setTokens(STANDARD_THRESHOLD_TOKENS);
+		emit("agent_settled", ctx);
+
+		expect(compact).toHaveBeenCalledTimes(2);
+	});
+
+	it("clears a soft outcome on a model change", () => {
+		const { emit } = createHarness();
+		const { ctx, compact } = createContext(STANDARD_THRESHOLD_TOKENS, 250_000);
+
+		emit("agent_settled", ctx);
+		compact.mock.calls[0][0].onError(NOTHING_TO_COMPACT);
+		emit("model_select", ctx);
+		emit("agent_settled", ctx);
+
+		expect(compact).toHaveBeenCalledTimes(2);
+	});
+
+	it("clears a soft outcome when another compaction succeeds", () => {
+		const { emit } = createHarness();
+		const { ctx, compact, setTokens } = createContext(STANDARD_THRESHOLD_TOKENS, 250_000);
+
+		emit("agent_settled", ctx);
+		compact.mock.calls[0][0].onError(NOTHING_TO_COMPACT);
+		emit("session_compact", ctx);
+		setTokens(100_000);
+		emit("agent_settled", ctx);
+		setTokens(STANDARD_THRESHOLD_TOKENS);
 		emit("agent_settled", ctx);
 
 		expect(compact).toHaveBeenCalledTimes(2);
@@ -324,5 +412,16 @@ describe("auto-compact-status command", () => {
 		await run();
 
 		expect(compact).not.toHaveBeenCalled();
+	});
+
+	it("does not claim a compaction is coming when nothing can be compacted", async () => {
+		const { emit, ctx, run, compact } = status(150_000, 250_000);
+		emit("agent_settled", ctx);
+		compact.mock.calls[0][0].onError(new Error("Nothing to compact (session too small)"));
+
+		const message = await run();
+
+		expect(message).toContain("over threshold, nothing to compact yet, waiting for usage to cross again");
+		expect(message).not.toContain("compacts on the next settled run");
 	});
 });
